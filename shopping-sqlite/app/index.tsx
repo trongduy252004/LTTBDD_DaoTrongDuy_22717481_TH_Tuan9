@@ -1,60 +1,73 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, Button, Alert } from "react-native";
+import { View, Text, FlatList, Button, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { ProductRepo } from "../src/db/product.repo";
-import { CartRepo } from "../src/db/cart.repo";
-import { initDatabase } from "../src/db/db";
+import { getAllProducts } from "../src/db/product.repo";
+import { addToCart } from "../src/db/cart.repo";
+import type { Product } from "../src/models/types";
 
-export default function ProductScreen() {
-  const [products, setProducts] = useState<any[]>([]);
+export default function IndexScreen() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   const load = async () => {
-    await initDatabase();
-    const data = await ProductRepo.getAll();
-    setProducts(data);
-  };
-
-  const addToCart = async (productId: string) => {
-    const ok = await CartRepo.addToCart(productId);
-    if (ok) Alert.alert("🛒", "Đã thêm vào giỏ!");
-    else Alert.alert("⚠️", "Không đủ tồn kho!");
-    load();
+    setLoading(true);
+    const list = await getAllProducts();
+    setProducts(list);
+    setLoading(false);
   };
 
   useEffect(() => {
     load();
   }, []);
 
+  const handleAdd = async (p: Product) => {
+    const ok = await addToCart(p.id, 1);
+    if (ok) {
+      alert("Đã thêm vào giỏ!");
+      load();
+    } else {
+      alert("Không đủ tồn kho!");
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+        <Text>Đang tải...</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={{ flex: 1, padding: 16, backgroundColor: "#f8f9fa" }}>
-      <Text style={{ fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 10 }}>
-        🛍️ Danh sách sản phẩm
-      </Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Danh sách sản phẩm</Text>
       <FlatList
         data={products}
-        keyExtractor={(item) => item.product_id}
+        keyExtractor={(it) => it.id.toString()}
         renderItem={({ item }) => (
-          <View
-            style={{
-              backgroundColor: "#fff",
-              padding: 12,
-              borderRadius: 12,
-              marginBottom: 10,
-              shadowColor: "#000",
-              shadowOpacity: 0.1,
-              shadowRadius: 3,
-              elevation: 2,
-            }}
-          >
-            <Text style={{ fontWeight: "bold" }}>{item.name}</Text>
-            <Text>Giá: {item.price.toLocaleString()}₫</Text>
-            <Text>Tồn kho: {item.stock}</Text>
-            <Button title="Thêm vào giỏ" onPress={() => addToCart(item.product_id)} />
+          <View style={styles.card}>
+            <Text style={styles.name}>{item.name}</Text>
+            <Text style={styles.price}>{item.price.toLocaleString()}₫</Text>
+            <Text style={styles.stock}>Còn: {item.stock}</Text>
+            <Button title="Thêm vào giỏ" onPress={() => handleAdd(item)} disabled={item.stock <= 0} />
           </View>
         )}
       />
-      <Button title="🛒 Xem giỏ hàng" color="#2b9348" onPress={() => router.push("/cart")} />
+      <View style={{ marginTop: 10 }}>
+        <Button title="Xem Giỏ hàng" onPress={() => router.push("/cart")} />
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 12, backgroundColor: "#f9f9f9" },
+  title: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
+  card: { backgroundColor: "#fff", padding: 12, borderRadius: 10, marginBottom: 10 },
+  name: { fontSize: 18, fontWeight: "600" },
+  price: { color: "#007aff", marginTop: 6 },
+  stock: { color: "#666", marginTop: 4, marginBottom: 8 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+});

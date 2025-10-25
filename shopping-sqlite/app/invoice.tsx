@@ -1,68 +1,67 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, Button, Alert } from "react-native";
-import { CartRepo } from "../src/db/cart.repo";
-import { OrderRepo } from "../src/db/order.repo";
+import { View, Text, FlatList, StyleSheet } from "react-native";
+import { getAllOrders, getOrderItems } from "../src/db/order.repo";
+import type { Order } from "../src/models/types";
+import { useRouter } from "expo-router";
 
 export default function InvoiceScreen() {
-  const [items, setItems] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const router = useRouter();
 
   const load = async () => {
-    const data = await CartRepo.getCartWithProducts();
-    setItems(data);
-    setTotal(data.reduce((sum, i) => sum + i.price * i.qty, 0));
+    const o = await getAllOrders();
+    setOrders(o);
   };
 
   useEffect(() => {
     load();
   }, []);
 
-  const handleCheckout = async () => {
-    if (items.length === 0) {
-      Alert.alert("Giỏ hàng trống", "Vui lòng thêm sản phẩm trước khi thanh toán.");
-      return;
-    }
-    const id = await OrderRepo.createOrder();
-    await OrderRepo.addOrderItems(id);
-    await OrderRepo.clearCartAndReduceStock();
-    Alert.alert("Thanh toán thành công 🎉", `Mã đơn hàng #${id}`);
-    load();
-  };
-
   return (
-    <View style={{ flex: 1, backgroundColor: "#f8f9fa", padding: 16 }}>
-      <Text style={{ fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 12 }}>
-        🧾 Hóa đơn
-      </Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Lịch sử đơn hàng</Text>
 
       <FlatList
-        data={items}
-        keyExtractor={(i) => i.product_id}
-        renderItem={({ item }) => (
-          <View
-            style={{
-              backgroundColor: "#fff",
-              padding: 12,
-              borderRadius: 12,
-              marginBottom: 10,
-              shadowColor: "#000",
-              shadowOpacity: 0.1,
-              shadowRadius: 3,
-              elevation: 2,
-            }}
-          >
-            <Text style={{ fontWeight: "bold" }}>{item.name}</Text>
-            <Text>Số lượng: {item.qty}</Text>
-            <Text>Đơn giá: {item.price.toLocaleString()}₫</Text>
-            <Text>Tạm tính: {(item.qty * item.price).toLocaleString()}₫</Text>
-          </View>
-        )}
+        data={orders}
+        keyExtractor={(it) => it.id.toString()}
+        ListEmptyComponent={<Text>Chưa có đơn hàng</Text>}
+        renderItem={({ item }) => <OrderCard order={item} />}
       />
-
-      <View style={{ borderTopWidth: 1, borderColor: "#ccc", marginTop: 10, paddingTop: 10 }}>
-        <Text style={{ fontSize: 18, fontWeight: "bold" }}>Tổng cộng: {total.toLocaleString()}₫</Text>
-        <Button title="💳 Thanh toán" color="#2b9348" onPress={handleCheckout} />
-      </View>
     </View>
   );
 }
+
+function OrderCard({ order }: { order: Order }) {
+  const [items, setItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const rows = await getOrderItems(order.id);
+      setItems(rows);
+    })();
+  }, [order.id]);
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.date}>{new Date(order.date).toLocaleString()}</Text>
+      <FlatList
+        data={items}
+        keyExtractor={(it) => it.id.toString()}
+        renderItem={({ item }) => (
+          <Text>
+            {item.name} x{item.quantity} — {(item.price * item.quantity).toLocaleString()}₫
+          </Text>
+        )}
+      />
+      <Text style={styles.total}>Tổng: {order.total.toLocaleString()}₫</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 12, backgroundColor: "#f9f9f9" },
+  title: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
+  card: { backgroundColor: "#fff", padding: 12, borderRadius: 8, marginBottom: 10 },
+  date: { color: "#666", marginBottom: 6 },
+  total: { fontWeight: "700", marginTop: 8 },
+});

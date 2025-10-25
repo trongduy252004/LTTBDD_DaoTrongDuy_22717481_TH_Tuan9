@@ -1,50 +1,66 @@
-import { db } from "./db";
+import { openDatabase } from "./db";
+import type { CartItem } from "../models/types";
 
-export const CartRepo = {
-  async getCartWithProducts() {
-    return db.getAllSync(`
-      SELECT c.product_id, p.name, p.price, c.qty
-      FROM cart_items c
-      JOIN products p ON p.product_id = c.product_id
-    `);
-  },
+export async function getCartItems(): Promise<CartItem[]> {
+  const db = await openDatabase();
+  const rows = await db.getAllAsync(`
+    SELECT c.id, c.product_id, c.quantity, p.name, p.price
+    FROM cart c
+    JOIN products p ON p.id = c.product_id
+    ORDER BY c.id;
+  `);
+  return (rows as any) as CartItem[];
+}
 
-  async addToCart(productId: string) {
-    const product = db.getFirstSync<any>(
-      "SELECT stock FROM products WHERE product_id = ?",
-      [productId]
-    );
-    if (!product) return false;
-    const item = db.getFirstSync<any>(
-      "SELECT qty FROM cart_items WHERE product_id = ?",
-      [productId]
-    );
+export async function addToCart(productId: number, qty: number = 1): Promise<boolean> {
+  const db = await openDatabase();
 
-    if (!item) {
-      db.runSync("INSERT INTO cart_items (product_id, qty) VALUES (?, 1)", [productId]);
-      return true;
-    }
-    if (item.qty < product.stock) {
-      db.runSync("UPDATE cart_items SET qty = qty + 1 WHERE product_id = ?", [productId]);
-      return true;
-    }
-    return false;
-  },
+  // check product stock
+  const prod = await db.getAllAsync("SELECT stock FROM products WHERE id = ?;", [productId]);
+  const stock = (prod as any)[0]?.stock ?? 0;
+  if (stock < qty) return false;
 
-  async updateQty(productId: string, qty: number) {
-    if (qty <= 0) {
-      db.runSync("DELETE FROM cart_items WHERE product_id = ?", [productId]);
-      return;
-    }
-    const stock = db.getFirstSync<any>(
-      "SELECT stock FROM products WHERE product_id = ?",
-      [productId]
-    )?.stock;
-    if (qty > stock) return;
-    db.runSync("UPDATE cart_items SET qty = ? WHERE product_id = ?", [qty, productId]);
-  },
+  const existing = await db.getAllAsync("SELECT id, quantity FROM cart WHERE product_id = ?;", [productId]);
+  const arr = (existing as any) as { id: number; quantity: number }[];
+  if (arr.length > 0) {
+    // ensure not exceed stock
+    const newQty = arr[0].quantity + qty;
+    if (newQty > stock) return false;
+    await db.runAsync("UPDATE cart SET quantity = ? WHERE product_id = ?;", [newQty, productId]);
+  } else {
+    await db.runAsync("INSERT INTO cart (product_id, quantity) VALUES (?, ?);", [productId, qty]);
+  }
+  return true;
+}
 
-  async remove(productId: string) {
-    db.runSync("DELETE FROM cart_items WHERE product_id = ?", [productId]);
-  },
-};
+export async function updateCartItem(productId: number, qty: number) {
+  const db = await openDatabase();
+  if (qty <= 0) {
+    await db.runAsync("DELETE FROM cart WHERE product_id = ?;", [productId]);
+    return;
+  }
+  const prod = await db.getAllAsync("SELECT stock FROM products WHERE id = ?;", [productId]);
+  const stock = (prod as any)[0]?.stock ?? 0;
+  if (qty > stock) throw new Error("Quantity exceeds stock");
+  await db.runAsync("UPDATE cart SET quantity = ? WHERE product_id = ?;", [qty, productId]);
+}
+
+export async function removeCartItem(productId: number) {
+  const db = await openDatabase();
+  await db.runAsync("DELETE FROM cart WHERE product_id = ?;", [productId]);
+}
+
+export async function clearCart() {
+  const db = await openDatabase();
+  await db.execAsync("DELETE FROM cart;");
+}
+
+export async function getCartTotal(): Promise<number> {
+  const db = await openDatabase();
+  const rows = await db.getAllAsync(`
+    SELECT SUM(c.quantity * p.price) as total
+    FROM cart c JOIN products p ON c.product_id = p.id;
+  `);
+  const total = (rows as any)[0]?.total ?? 0;
+  return total;
+}

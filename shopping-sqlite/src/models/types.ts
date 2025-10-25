@@ -1,5 +1,5 @@
 export type Product = {
-  product_id: string;
+  id: number;
   name: string;
   price: number;
   stock: number;
@@ -7,6 +7,14 @@ export type Product = {
 
 export type CartItem = {
   id: number;
-  product_id: string;
-  qty: number;
+  product_id: number;
+  quantity: number;
+  name?: string;
+  price?: number;
+};
+
+export type Order = {
+  id: number;
+  date: string;
+  total: number;
 };
